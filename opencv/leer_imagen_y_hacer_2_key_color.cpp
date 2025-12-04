@@ -35,8 +35,6 @@ int main() {
     cv::Mat mascara_amarillo = crearMascara(imagen_hsv,
                                             cv::Scalar(20, 100, 100), cv::Scalar(30, 255, 255));
 
-    cv::Mat mascara_amarillo = crearMascara(imagen_hsv,
-                                            cv::Scalar(20, 100, 100), cv::Scalar(30, 255, 255));
 
 
 
