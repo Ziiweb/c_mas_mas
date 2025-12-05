@@ -21,13 +21,8 @@ void on_open_file(GtkWidget *widget, gpointer data) {
 
         g_print("Archivo seleccionado: %s\n", filename);
 
-        // Detener reproducción si estaba corriendo
         gst_element_set_state(vd->playbin, GST_STATE_NULL);
-
-        // Configurar el archivo de vídeo
         g_object_set(vd->playbin, "uri", g_strdup_printf("file://%s", filename), NULL);
-
-        // Iniciar reproducción
         gst_element_set_state(vd->playbin, GST_STATE_PLAYING);
 
         g_free(filename);
@@ -36,17 +31,39 @@ void on_open_file(GtkWidget *widget, gpointer data) {
     gtk_widget_destroy(dialog);
 }
 
+// Callbacks de control
+void on_play(GtkWidget *widget, gpointer data) {
+    gst_element_set_state(((VideoData *)data)->playbin, GST_STATE_PLAYING);
+}
+
+void on_pause(GtkWidget *widget, gpointer data) {
+    gst_element_set_state(((VideoData *)data)->playbin, GST_STATE_PAUSED);
+}
+
+void on_stop(GtkWidget *widget, gpointer data) {
+    gst_element_set_state(((VideoData *)data)->playbin, GST_STATE_NULL);
+}
+
+void on_restart(GtkWidget *widget, gpointer data) {
+    VideoData *vd = (VideoData *)data;
+    // Seek al inicio
+    gst_element_seek_simple(vd->playbin,
+                            GST_FORMAT_TIME,
+                            (GstSeekFlags)(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+                            0);
+    gst_element_set_state(vd->playbin, GST_STATE_PLAYING); // opcional: reproducir tras reiniciar
+}
+
 int main(int argc, char *argv[]) {
     gtk_init(&argc, &argv);
     gst_init(&argc, &argv);
 
-    // Crear ventana principal
+    // Ventana principal
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "GTK Video Player (gtksink)");
     gtk_window_set_default_size(GTK_WINDOW(window), 800, 600);
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
 
-    // Contenedor vertical
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window), vbox);
 
@@ -58,22 +75,41 @@ int main(int argc, char *argv[]) {
     GtkWidget *frame = gtk_frame_new("Video");
     gtk_box_pack_start(GTK_BOX(vbox), frame, TRUE, TRUE, 0);
 
+    // Contenedor de botones
+    GtkWidget *hbox_buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+    gtk_box_pack_start(GTK_BOX(vbox), hbox_buttons, FALSE, FALSE, 5);
+
     // --- GStreamer playbin ---
     VideoData vd;
     vd.playbin = gst_element_factory_make("playbin", "playbin");
 
-    // Crear sink gtksink
     GstElement *sink = gst_element_factory_make("gtksink", "videosink");
+    if (!sink) {
+        g_error("No se pudo crear gtksink. ¿Está instalado?");
+    }
     g_object_set(vd.playbin, "video-sink", sink, NULL);
 
-    // Obtener widget GTK que maneja gtksink
-    GtkWidget *video_widget = NULL;
-    g_object_get(sink, "widget", &video_widget, NULL);
-
-    // Añadir widget al frame
+    GtkWidget *video_widget = nullptr;
+    g_object_get(sink, "widget", &video_widget, nullptr);
     gtk_container_add(GTK_CONTAINER(frame), video_widget);
 
-    // Menú Archivo -> Abrir
+    // --- Botones ---
+    GtkWidget *btn_play = gtk_button_new_with_label("Reproducir");
+    GtkWidget *btn_pause = gtk_button_new_with_label("Pausar");
+    GtkWidget *btn_stop = gtk_button_new_with_label("Detener");
+    GtkWidget *btn_restart = gtk_button_new_with_label("Reiniciar");
+
+    gtk_box_pack_start(GTK_BOX(hbox_buttons), btn_play, FALSE, FALSE, 5);
+    gtk_box_pack_start(GTK_BOX(hbox_buttons), btn_pause, FALSE, FALSE, 5);
+    gtk_box_pack_start(GTK_BOX(hbox_buttons), btn_stop, FALSE, FALSE, 5);
+    gtk_box_pack_start(GTK_BOX(hbox_buttons), btn_restart, FALSE, FALSE, 5);
+
+    g_signal_connect(btn_play, "clicked", G_CALLBACK(on_play), &vd);
+    g_signal_connect(btn_pause, "clicked", G_CALLBACK(on_pause), &vd);
+    g_signal_connect(btn_stop, "clicked", G_CALLBACK(on_stop), &vd);
+    g_signal_connect(btn_restart, "clicked", G_CALLBACK(on_restart), &vd);
+
+    // --- Menú Archivo → Abrir ---
     GtkWidget *menu_file = gtk_menu_new();
     GtkWidget *file_item = gtk_menu_item_new_with_label("Archivo");
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(file_item), menu_file);
@@ -84,12 +120,25 @@ int main(int argc, char *argv[]) {
 
     gtk_menu_shell_append(GTK_MENU_SHELL(menu_bar), file_item);
 
-    // Mostrar todo
+    // --- AccelGroup para shortcuts ---
+    GtkAccelGroup *accel_group = gtk_accel_group_new();
+    gtk_window_add_accel_group(GTK_WINDOW(window), accel_group);
+
+    gtk_widget_add_accelerator(open_item, "activate", accel_group,
+                               GDK_KEY_o, (GdkModifierType)GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(btn_play, "clicked", accel_group,
+                               GDK_KEY_p, (GdkModifierType)GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(btn_pause, "clicked", accel_group,
+                               GDK_KEY_p, (GdkModifierType)(GDK_CONTROL_MASK | GDK_SHIFT_MASK), GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(btn_stop, "clicked", accel_group,
+                               GDK_KEY_s, (GdkModifierType)GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
+    gtk_widget_add_accelerator(btn_restart, "clicked", accel_group,
+                               GDK_KEY_r, (GdkModifierType)GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE);
+
     gtk_widget_show_all(window);
 
     gtk_main();
 
-    // Limpiar GStreamer
     gst_element_set_state(vd.playbin, GST_STATE_NULL);
     gst_object_unref(vd.playbin);
 
