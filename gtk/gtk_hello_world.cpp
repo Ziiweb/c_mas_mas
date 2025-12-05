@@ -1,4 +1,11 @@
 #include <gtk/gtk.h>
+#include <gst/gst.h>
+#include <gst/video/videooverlay.h>
+
+typedef struct {
+    GtkWidget *drawing_area;
+    GstElement *playbin;
+} VideoData;
 
 void on_open_file(GtkWidget *widget, gpointer data) {
     GtkWidget *dialog;
